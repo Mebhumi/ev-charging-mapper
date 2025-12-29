@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EV Charging Station Mapper - Thailand</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #map { height: 100vh; width: 100%; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 320px; height: 100vh; background: white; box-shadow: 2px 0 8px rgba(0,0,0,0.1); overflow-y: auto; z-index: 1000; }
+        .sidebar-header { padding: 20px; background: #1a73e8; color: white; }
+        .sidebar-header h2 { font-size: 18px; margin-bottom: 5px; }
+        .stats { padding: 15px; background: #f0f4f8; border-bottom: 1px solid #ddd; }
+        .stat-item { display: flex; justify-content: space-between; margin: 8px 0; font-size: 14px; }
+        .stat-value { font-weight: bold; color: #1a73e8; }
+        .filter-section { padding: 15px; }
+        .filter-section h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; color: #333; }
+        .filter-btn { display: block; width: 100%; padding: 10px; margin: 6px 0; border: 2px solid #ddd; background: white; border-radius: 6px; cursor: pointer; font-size: 13px; }
+        .filter-btn.active { background: #1a73e8; color: white; border-color: #1a73e8; }
+        .legend { padding: 15px; border-top: 1px solid #ddd; }
+        .legend-item { display: flex; align-items: center; margin: 8px 0; font-size: 12px; }
+        .legend-color { width: 20px; height: 20px; border-radius: 50%; margin-right: 10px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h2>⚡ EV Charging Stations</h2>
+            <p style="font-size: 12px; margin-top: 5px;">Thailand Network</p>
+        </div>
+        <div class="stats">
+            <div class="stat-item">
+                <span>Total Stations:</span>
+                <span class="stat-value" id="totalStations">0</span>
+            </div>
+            <div class="stat-item">
+                <span>Capacity:</span>
+                <span class="stat-value" id="totalCapacity">0</span> kW
+            </div>
+        </div>
+        <div class="filter-section">
+            <h3>Filter by Operator</h3>
+            <button class="filter-btn active" onclick="filterOperator('all')">All Operators</button>
+            <button class="filter-btn" onclick="filterOperator('PTT')">PTT</button>
+            <button class="filter-btn" onclick="filterOperator('PEA')">PEA</button>
+            <button class="filter-btn" onclick="filterOperator('ReverCharger')">ReverCharger</button>
+            <button class="filter-btn" onclick="filterOperator('EleX')">EleX</button>
+            <button class="filter-btn" onclick="filterOperator('Altervim')">Altervim</button>
+        </div>
+        <div class="legend">
+            <h3 style="font-size: 12px; margin-bottom: 10px; color: #333;">Power Capacity</h3>
+            <div class="legend-item"><div class="legend-color" style="background: #FF6B35;"></div> <span>PTT (50 kW)</span></div>
+            <div class="legend-item"><div class="legend-color" style="background: #4ECDC4;"></div> <span>PEA (50 kW)</span></div>
+            <div class="legend-item"><div class="legend-color" style="background: #F38181;"></div> <span>ReverCharger (25 kW)</span></div>
+            <div class="legend-item"><div class="legend-color" style="background: #95E1D3;"></div> <span>EleX (50 kW)</span></div>
+            <div class="legend-item"><div class="legend-color" style="background: #AA96DA;"></div> <span>Altervim (50 kW)</span></div>
+        </div>
+    </div>
+    <div id="map" style="margin-left: 320px;"></div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const stations = [
+            { name: 'PTT Station 1', operator: 'PTT', capacity: 50, lat: 13.7461, lng: 100.5382 },
+            { name: 'PTT Station 2', operator: 'PTT', capacity: 50, lat: 13.6890, lng: 100.5160 },
+            { name: 'PTT Station 3', operator: 'PTT', capacity: 50, lat: 13.8089, lng: 100.5465 },
+            { name: 'PEA Charging 1', operator: 'PEA', capacity: 50, lat: 13.7280, lng: 100.4920 },
+            { name: 'PEA Charging 2', operator: 'PEA', capacity: 50, lat: 13.6920, lng: 100.5580 },
+            { name: 'ReverCharger Bangkok 1', operator: 'ReverCharger', capacity: 25, lat: 13.7370, lng: 100.5265 },
+            { name: 'ReverCharger Bangkok 2', operator: 'ReverCharger', capacity: 50, lat: 13.6850, lng: 100.5420 },
+            { name: 'EleX Station Alpha', operator: 'EleX', capacity: 50, lat: 13.7550, lng: 100.4850 },
+            { name: 'EleX Station Beta', operator: 'EleX', capacity: 50, lat: 13.7050, lng: 100.5320 },
+            { name: 'Altervim Charging 1', operator: 'Altervim', capacity: 50, lat: 13.7700, lng: 100.5500 },
+            { name: 'Altervim Charging 2', operator: 'Altervim', capacity: 50, lat: 13.6950, lng: 100.4950 },
+        ];
+        const colors = { 'PTT': '#FF6B35', 'PEA': '#4ECDC4', 'ReverCharger': '#F38181', 'EleX': '#95E1D3', 'Altervim': '#AA96DA' };
+        let map, filtered = stations;
+        function init() {
+            map = L.map('map').setView([13.7262, 100.5392], 11);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+            render();
+            updateStats();
+        }
+        function render() {
+            map.eachLayer(l => { if (l instanceof L.Marker) map.removeLayer(l); });
+            filtered.forEach(s => {
+                L.circleMarker([s.lat, s.lng], { radius: 8, fillColor: colors[s.operator], color: '#fff', weight: 2, fillOpacity: 0.8 })
+                    .addTo(map).bindPopup(`<b>${s.name}</b><br>Operator: ${s.operator}<br>Capacity: ${s.capacity} kW`);
+            });
+        }
+        function filterOperator(op) {
+            filtered = op === 'all' ? stations : stations.filter(s => s.operator === op);
+            render();
+            updateStats();
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            if (op === 'all') document.querySelectorAll('.filter-btn')[0].classList.add('active');
+            else document.querySelectorAll('.filter-btn').forEach(b => { if (b.textContent.trim() === op) b.classList.add('active'); });
+        }
+        function updateStats() {
+            document.getElementById('totalStations').textContent = filtered.length;
+            document.getElementById('totalCapacity').textContent = filtered.reduce((s, st) => s + st.capacity, 0);
+        }
+        init();
+    </script>
+</body>
+</html>
